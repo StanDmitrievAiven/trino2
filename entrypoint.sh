@@ -20,6 +20,10 @@ if [ -n "$TRINO_ADMIN_USER" ] && [ -n "$TRINO_ADMIN_PASSWORD" ]; then
     echo "---"
 fi
 
+# --- Optional OPA access control (DataHub-driven policies via external OPA) ---
+python3 /opt/trino-init/init_opa_access_control.py
+echo "---"
+
 # --- Initialize schema and fetch catalogs from PG ---
 echo "Fetching catalogs from database..."
 python3 /opt/trino-init/fetch_catalogs.py

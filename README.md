@@ -29,6 +29,17 @@ This repository contains a Docker-based deployment for [Trino](https://trino.io/
 - `TRINO_ADMIN_USER` – Admin username for Web UI and CLI. Requires `TRINO_ADMIN_PASSWORD`.
 - `TRINO_ADMIN_PASSWORD` – **Secret.** Admin password. When set with `TRINO_ADMIN_USER`, enables password authentication for the Web UI and CLI.
 
+### OPA access control (optional)
+
+Use this when you run [Open Policy Agent](https://www.openpolicyagent.org/) with Trino policies (for example governance synced from [DataHub](https://datahubproject.io/)). Trino calls OPA over HTTP; **both** variables must be set or OPA is skipped.
+
+- `OPA_POLICY_URI` – Full URL to the allow endpoint, e.g. `https://opa.example.com/v1/data/trino/allow`
+- `OPA_POLICY_BATCHED_URI` – Full URL to the batch endpoint, e.g. `https://opa.example.com/v1/data/trino/batch`
+
+The App Runtime container must be able to **reach these URLs** (TLS recommended). Trino user names should match identities expected by your policies.
+
+- `OPA_ACCESS_CONTROL_EXTRAS` – Optional. Extra lines appended to `access-control.properties` (newline-separated), e.g. [`opa.http-client.*`](https://trino.io/docs/current/security/opa-access-control.html) for custom trust stores.
+
 ## PostgreSQL Schema
 
 The entrypoint creates the `trino_catalogs` table automatically. For reference, the schema is:
@@ -128,18 +139,20 @@ Password authentication works behind Aiven's TLS-terminating proxy (`http-server
 ## Project Structure
 
 ```
-├── Dockerfile            # Multi-stage: UBI Python + Trino
-├── entrypoint.sh         # Validates env, configures auth, fetches catalogs, starts Trino
-├── fetch_catalogs.py     # Reads trino_catalogs from PG, writes .properties files
-├── init_password_auth.py # Configures password auth when TRINO_ADMIN_USER/PASSWORD set
-├── encrypt_catalog.py    # Helper to encrypt properties before INSERT (run locally)
-├── init-schema.sql       # Schema reference (auto-applied by fetch_catalogs.py)
-└── README.md             # This file
+├── Dockerfile                 # Multi-stage: UBI Python + Trino
+├── entrypoint.sh              # Validates env, configures auth / OPA, fetches catalogs, starts Trino
+├── fetch_catalogs.py          # Reads trino_catalogs from PG, writes .properties files
+├── init_password_auth.py      # Password auth when TRINO_ADMIN_USER/PASSWORD set
+├── init_opa_access_control.py # OPA plugin when OPA_POLICY_URI / OPA_POLICY_BATCHED_URI set
+├── catalog_watcher.py         # Dynamic CREATE CATALOG from PG
+├── encrypt_catalog.py         # Helper to encrypt properties before INSERT (run locally)
+├── init-schema.sql            # Schema reference (auto-applied by fetch_catalogs.py)
+└── README.md                  # This file
 ```
 
 ## How It Works
 
-1. **Startup:** Entrypoint runs `fetch_catalogs.py`, which connects to PostgreSQL.
+1. **Startup:** Entrypoint optionally configures password auth and **OPA** (`access-control.properties`), then runs `fetch_catalogs.py`, which connects to PostgreSQL.
 2. **Schema:** Creates `trino_catalogs` table if it doesn't exist.
 3. **Fetch:** Selects all rows from `trino_catalogs`.
 4. **Write:** For each row, creates `/etc/trino/catalog/{name}.properties`.
@@ -177,6 +190,12 @@ Trino is memory-intensive. For this **single-node** deployment (coordinator + wo
 
 - Trino defaults to 8080. If Aiven sets `PORT`, the entrypoint updates `config.properties` automatically.
 
+### OPA / queries denied or Trino fails to start
+
+- Confirm `OPA_POLICY_URI` and `OPA_POLICY_BATCHED_URI` are correct and reachable **from the Trino container** (curl from a debug shell or check OPA logs).
+- If OPA is down, Trino may reject governed operations; run OPA with high availability or relax policies for break-glass (advanced).
+- For TLS to OPA with a private CA, set `OPA_ACCESS_CONTROL_EXTRAS` with the appropriate `opa.http-client.*` properties (see Trino docs).
+
 ## Security Considerations
 
 ### Current Security Posture
@@ -210,5 +229,6 @@ Trino is memory-intensive. For this **single-node** deployment (coordinator + wo
 ## Resources
 
 - [Trino Documentation](https://trino.io/docs/current/)
+- [Trino OPA access control](https://trino.io/docs/current/security/opa-access-control.html)
 - [Trino Connectors](https://trino.io/docs/current/connector.html)
 - [Aiven App Runtime](https://docs.aiven.io/docs/products/app-runtime)
