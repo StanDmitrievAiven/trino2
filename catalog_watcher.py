@@ -122,10 +122,10 @@ def _trino_connection():
     """Create Trino connection (uses official client for proper auth)."""
     if not trino_connect:
         raise RuntimeError("trino package required. Install with: pip install trino")
-    # Localhost: Trino may still return nextUri as https://127.0.0.1 (e.g. with
-    # process-forwarded). Only HTTP is served on the internal port; rewrite loopback
-    # https URLs to http on every request. Password over HTTP is allowed because
-    # init_password_auth.py sets http-server.authentication.allow-insecure-over-http=true.
+    # With http-server.process-forwarded=true, Trino requires a "secure" client view for
+    # PASSWORD auth — without X-Forwarded-Proto: https you get 401 "Password not allowed
+    # for insecure authentication". That also makes nextUri use https://127.0.0.1 while
+    # only plain HTTP listens locally; _LoopbackTrinoHttpSession rewrites those to http://.
     session = _LoopbackTrinoHttpSession()
     kwargs = dict(
         host=TRINO_HOST,
@@ -135,6 +135,10 @@ def _trino_connection():
         schema="runtime",
         http_scheme="http",
         http_session=session,
+        http_headers={
+            "X-Forwarded-Proto": "https",
+            "X-Forwarded-For": "127.0.0.1",
+        },
     )
     if TRINO_PASSWORD:
         kwargs["auth"] = BasicAuthentication(TRINO_USER, TRINO_PASSWORD)
