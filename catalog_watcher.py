@@ -10,6 +10,9 @@ import sys
 import json
 import base64
 import time
+from urllib.parse import urlparse, urlunparse
+
+import requests
 
 try:
     import psycopg2
@@ -58,6 +61,35 @@ if not TRINO_PASSWORD and os.environ.get("TRINO_ADMIN_PASSWORD_FILE"):
 POLL_INTERVAL = int(os.environ.get("CATALOG_WATCHER_INTERVAL", "60"))
 
 
+def _coerce_loopback_https_to_http(url: str) -> str:
+    """
+    Trino may return nextUri/infoUri as https://127.0.0.1 when
+    http-server.process-forwarded=true (or similar), while inside the container
+    only plain HTTP is listening — following https causes SSL record layer failure.
+    """
+    try:
+        p = urlparse(url)
+        if p.scheme != "https":
+            return url
+        host = (p.hostname or "").lower().strip("[]")
+        if host in ("127.0.0.1", "localhost", "::1"):
+            return urlunparse(
+                ("http", p.netloc, p.path, p.params, p.query, p.fragment)
+            )
+    except Exception:
+        pass
+    return url
+
+
+class _LoopbackTrinoHttpSession(requests.Session):
+    """Forces http:// for loopback URLs on all Trino client requests (POST/GET/DELETE)."""
+
+    def request(self, method, url, *args, **kwargs):
+        if isinstance(url, str):
+            url = _coerce_loopback_https_to_http(url)
+        return super().request(method, url, *args, **kwargs)
+
+
 def _get_fernet(encryption_key: str):
     if not Fernet:
         return None
@@ -90,6 +122,11 @@ def _trino_connection():
     """Create Trino connection (uses official client for proper auth)."""
     if not trino_connect:
         raise RuntimeError("trino package required. Install with: pip install trino")
+    # Localhost: Trino may still return nextUri as https://127.0.0.1 (e.g. with
+    # process-forwarded). Only HTTP is served on the internal port; rewrite loopback
+    # https URLs to http on every request. Password over HTTP is allowed because
+    # init_password_auth.py sets http-server.authentication.allow-insecure-over-http=true.
+    session = _LoopbackTrinoHttpSession()
     kwargs = dict(
         host=TRINO_HOST,
         port=TRINO_PORT,
@@ -97,9 +134,7 @@ def _trino_connection():
         catalog="system",
         schema="runtime",
         http_scheme="http",
-        # Trino rejects password over plain HTTP. With process-forwarded=true,
-        # sending X-Forwarded-Proto: https makes Trino treat the connection as secure.
-        http_headers={"X-Forwarded-Proto": "https", "X-Forwarded-For": "127.0.0.1"},
+        http_session=session,
     )
     if TRINO_PASSWORD:
         kwargs["auth"] = BasicAuthentication(TRINO_USER, TRINO_PASSWORD)

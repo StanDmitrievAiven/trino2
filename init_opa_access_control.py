@@ -15,13 +15,41 @@ from __future__ import annotations
 import os
 import pwd
 import sys
+from urllib.parse import urlparse
+
+
+def _opa_url_ok(name: str, value: str) -> bool:
+    """Trino needs absolute URLs with scheme and host; placeholders break at runtime."""
+    v = value.strip()
+    if not v:
+        return False
+    if v in (name, f"${{{name}}}", f"${name}"):
+        print(
+            f"OPA access control: {name} looks like an unresolved placeholder ({v!r}). "
+            f"Set it to a full URL, e.g. https://opa.example.com/v1/data/trino/allow",
+            file=sys.stderr,
+        )
+        return False
+    parsed = urlparse(v)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        print(
+            f"OPA access control: {name} must be a full http(s) URL with a host (got {v!r}).",
+            file=sys.stderr,
+        )
+        return False
+    return True
 
 
 def main() -> None:
     uri = os.environ.get("OPA_POLICY_URI", "").strip()
     batched = os.environ.get("OPA_POLICY_BATCHED_URI", "").strip()
 
+    config_dir = "/etc/trino"
+    out_path = os.path.join(config_dir, "access-control.properties")
+
     if not uri or not batched:
+        if os.path.isfile(out_path):
+            os.remove(out_path)
         print(
             "OPA access control: not configured (optional). "
             "Set both OPA_POLICY_URI and OPA_POLICY_BATCHED_URI to enable.",
@@ -29,8 +57,17 @@ def main() -> None:
         )
         return
 
-    config_dir = "/etc/trino"
-    out_path = os.path.join(config_dir, "access-control.properties")
+    if not _opa_url_ok("OPA_POLICY_URI", uri) or not _opa_url_ok(
+        "OPA_POLICY_BATCHED_URI", batched
+    ):
+        if os.path.isfile(out_path):
+            os.remove(out_path)
+        print(
+            "OPA access control: disabled due to invalid URIs. "
+            "Fix env vars or unset both to run without OPA.",
+            file=sys.stderr,
+        )
+        return
 
     lines = [
         "access-control.name=opa",
