@@ -29,7 +29,8 @@ fi
 echo "---"
 
 # --- Initialize schema and fetch catalogs from PG ---
-echo "Fetching catalogs from database..."
+echo "Seeding and fetching catalogs from database..."
+python3 /opt/trino-init/seed_catalogs.py
 python3 /opt/trino-init/fetch_catalogs.py
 chown -R trino:trino /etc/trino/catalog 2>/dev/null || true
 echo "Catalogs synced."
