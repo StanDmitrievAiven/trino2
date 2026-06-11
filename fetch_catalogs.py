@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import base64
+import re
 
 try:
     from psycopg2.extras import RealDictCursor
@@ -37,6 +38,24 @@ CREATE TABLE IF NOT EXISTS trino_kafka_config (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 """
+
+
+ENV_PATTERN = re.compile(r"\$\{ENV:([^}]+)\}")
+
+
+def _missing_env_vars(props: dict) -> list[str]:
+    missing = []
+    for value in props.values():
+        if not isinstance(value, str):
+            continue
+        for env_key in ENV_PATTERN.findall(value):
+            if not os.environ.get(env_key):
+                missing.append(env_key)
+    if props.get("connector.name") == "kafka":
+        kafka_config = props.get("kafka.config.resources", "/etc/trino/kafka-client.properties")
+        if kafka_config and not os.path.exists(kafka_config):
+            missing.append("kafka-client.properties")
+    return missing
 
 
 def _get_fernet(encryption_key: str) -> "Fernet":
@@ -125,7 +144,13 @@ def main():
                 props = {k: v for k, v in props.items() if k not in invalid}
                 if kafka_row:
                     props["kafka.config.resources"] = kafka_config_path
+            missing = _missing_env_vars(props)
             path = os.path.join(catalog_dir, f"{name}.properties")
+            if missing:
+                if os.path.exists(path):
+                    os.remove(path)
+                print(f"  Skipped catalog {name} (missing: {', '.join(sorted(set(missing)))})")
+                continue
             with open(path, "w") as f:
                 for k, v in props.items():
                     f.write(f"{k}={v}\n")
