@@ -15,11 +15,12 @@ from urllib.parse import urlparse, urlunparse
 import requests
 
 try:
-    import psycopg2
     from psycopg2.extras import RealDictCursor
 except ImportError:
     print("ERROR: psycopg2 required", file=sys.stderr)
     sys.exit(1)
+
+from pg_connect import connect_pg, get_db_url
 
 try:
     from trino.dbapi import connect as trino_connect
@@ -185,12 +186,11 @@ def build_create_catalog_sql(name: str, props: dict, kafka_config_path: str = No
 
 
 def main():
-    db_url = os.environ.get("TRINO_CATALOG_DB_URL") or os.environ.get("DATABASE_URL")
-    if not db_url:
-        print("ERROR: DATABASE_URL required", file=sys.stderr)
+    try:
+        get_db_url()
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
-    if db_url.startswith("postgres://"):
-        db_url = "postgresql://" + db_url[11:]
 
     encryption_key = os.environ.get("TRINO_CATALOG_ENCRYPTION_KEY")
     fernet = _get_fernet(encryption_key) if encryption_key else None
@@ -213,7 +213,7 @@ def main():
     while True:
         try:
             trino_catalogs = get_trino_catalogs()
-            conn = psycopg2.connect(db_url)
+            conn = connect_pg()
             try:
                 with conn.cursor(cursor_factory=RealDictCursor) as cur:
                     cur.execute("SELECT name, properties FROM trino_catalogs")

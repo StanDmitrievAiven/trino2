@@ -10,11 +10,12 @@ import json
 import base64
 
 try:
-    import psycopg2
     from psycopg2.extras import RealDictCursor
 except ImportError:
     print("ERROR: psycopg2 required. Install with: pip install psycopg2-binary", file=sys.stderr)
     sys.exit(1)
+
+from pg_connect import connect_pg, get_db_url
 
 try:
     from cryptography.fernet import Fernet
@@ -72,19 +73,16 @@ def _decrypt_properties(props: dict, fernet: "Fernet") -> dict:
 
 
 def main():
-    db_url = os.environ.get("TRINO_CATALOG_DB_URL") or os.environ.get("DATABASE_URL")
-    if not db_url:
-        print("ERROR: DATABASE_URL or TRINO_CATALOG_DB_URL must be set", file=sys.stderr)
+    try:
+        get_db_url()
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
-
-    # postgres:// -> postgresql:// for psycopg2
-    if db_url.startswith("postgres://"):
-        db_url = "postgresql://" + db_url[11:]
 
     catalog_dir = "/etc/trino/catalog"
     os.makedirs(catalog_dir, exist_ok=True)
 
-    conn = psycopg2.connect(db_url)
+    conn = connect_pg()
     conn.autocommit = True
     try:
         with conn.cursor() as cur:

@@ -23,6 +23,7 @@ COPY --from=python-deps /opt/python-deps/ /usr/lib64/python3.12/site-packages/
 
 # Copy init scripts
 COPY init-schema.sql /opt/trino-init/
+COPY pg_connect.py /opt/trino-init/
 COPY fetch_catalogs.py /opt/trino-init/
 COPY init_password_auth.py /opt/trino-init/
 COPY catalog_watcher.py /opt/trino-init/
