@@ -25,10 +25,9 @@ COPY --from=python-deps /opt/python-deps/ /usr/lib64/python3.12/site-packages/
 COPY init-schema.sql /opt/trino-init/
 COPY fetch_catalogs.py /opt/trino-init/
 COPY init_password_auth.py /opt/trino-init/
-COPY init_opa_access_control.py /opt/trino-init/
 COPY catalog_watcher.py /opt/trino-init/
 COPY entrypoint.sh /opt/trino-init/
-RUN chmod +x /opt/trino-init/entrypoint.sh /opt/trino-init/fetch_catalogs.py /opt/trino-init/init_password_auth.py /opt/trino-init/init_opa_access_control.py /opt/trino-init/catalog_watcher.py
+RUN chmod +x /opt/trino-init/entrypoint.sh /opt/trino-init/fetch_catalogs.py /opt/trino-init/init_password_auth.py /opt/trino-init/catalog_watcher.py
 
 # Ensure catalog dir exists and is writable
 RUN mkdir -p /etc/trino/catalog && chown -R trino:trino /etc/trino

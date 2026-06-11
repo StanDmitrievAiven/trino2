@@ -13,15 +13,11 @@ fi
 echo "Using catalog database. Proceeding with startup."
 echo "---"
 
-# --- Configure password authentication (if TRINO_ADMIN_USER and TRINO_ADMIN_PASSWORD set) ---
-if [ -n "$TRINO_ADMIN_USER" ] && [ -n "$TRINO_ADMIN_PASSWORD" ]; then
-    echo "Configuring password authentication..."
-    python3 /opt/trino-init/init_password_auth.py
-    echo "---"
-fi
-
-# --- Optional OPA access control (DataHub-driven policies via external OPA) ---
-python3 /opt/trino-init/init_opa_access_control.py
+# --- Password authentication (always enabled; override via env vars) ---
+export TRINO_ADMIN_USER="${TRINO_ADMIN_USER:-trino_admin}"
+export TRINO_ADMIN_PASSWORD="${TRINO_ADMIN_PASSWORD:-Kv7#mPx9Lq2-Tr1n0}"
+echo "Configuring password authentication for user: $TRINO_ADMIN_USER"
+python3 /opt/trino-init/init_password_auth.py
 echo "---"
 
 # --- Initialize schema and fetch catalogs from PG ---
@@ -66,12 +62,9 @@ done
 
 # --- Start catalog watcher (polls PG, runs CREATE CATALOG for new connectors) ---
 export TRINO_INTERNAL_URL="http://127.0.0.1:${TRINO_PORT}"
-# Ensure watcher gets password: write to file so it's available even if env inheritance is odd
-if [ -n "$TRINO_ADMIN_PASSWORD" ]; then
-    echo -n "$TRINO_ADMIN_PASSWORD" > /tmp/trino-watcher-password
-    chmod 600 /tmp/trino-watcher-password
-    export TRINO_ADMIN_PASSWORD_FILE=/tmp/trino-watcher-password
-fi
+echo -n "$TRINO_ADMIN_PASSWORD" > /tmp/trino-watcher-password
+chmod 600 /tmp/trino-watcher-password
+export TRINO_ADMIN_PASSWORD_FILE=/tmp/trino-watcher-password
 python3 /opt/trino-init/catalog_watcher.py &
 WATCHER_PID=$!
 

@@ -46,7 +46,7 @@ else:
     TRINO_HOST = "127.0.0.1"
     TRINO_PORT = 8080
 
-TRINO_USER = os.environ.get("TRINO_ADMIN_USER", "admin")
+TRINO_USER = os.environ.get("TRINO_ADMIN_USER", "trino_admin")
 TRINO_PASSWORD = (
     os.environ.get("TRINO_ADMIN_PASSWORD")
     or os.environ.get("TRINO_PASSWORD")
