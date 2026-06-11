@@ -20,16 +20,15 @@ echo "Configuring password authentication for user: $TRINO_ADMIN_USER"
 python3 /opt/trino-init/init_password_auth.py
 echo "---"
 
-# --- Prepare connector credentials from Aiven service integrations ---
-python3 /opt/trino-init/prepare_connector_env.py
-if [ -f /tmp/trino-connector-env ]; then
-    # shellcheck disable=SC1091
-    . /tmp/trino-connector-env
+# --- Encrypt and store connector credentials in PG (no Aiven app integrations) ---
+if [ -n "${TRINO_CATALOG_ENCRYPTION_KEY:-}" ] && [ -n "${SUMMIT_PG_PASSWORD:-}${CLICKHOUSE_PASSWORD:-}" ]; then
+    echo "Storing encrypted summit connector credentials in catalog database..."
+    python3 /opt/trino-init/store_encrypted_catalogs.py || true
 fi
 echo "---"
 
 # --- Initialize schema and fetch catalogs from PG ---
-echo "Seeding and fetching catalogs from database..."
+echo "Fetching catalogs from database..."
 python3 /opt/trino-init/seed_catalogs.py
 python3 /opt/trino-init/fetch_catalogs.py
 chown -R trino:trino /etc/trino/catalog 2>/dev/null || true

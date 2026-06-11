@@ -19,6 +19,12 @@ except ImportError:
 from pg_connect import connect_pg, get_db_url
 
 try:
+    from catalog_crypto import decrypt_payload, decrypt_properties
+except ImportError:
+    decrypt_payload = None
+    decrypt_properties = None
+
+try:
     from cryptography.fernet import Fernet
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -119,9 +125,22 @@ def main():
                 cur.execute("SELECT config_text FROM trino_kafka_config LIMIT 1")
                 kafka_row = cur.fetchone()
             if kafka_row:
-                with open(kafka_config_path, "w") as f:
-                    f.write(kafka_row["config_text"])
-                print("  Wrote kafka-client.properties")
+                config_text = kafka_row["config_text"]
+                if (
+                    isinstance(config_text, str)
+                    and config_text.strip().startswith("{")
+                    and decrypt_payload
+                ):
+                    try:
+                        decrypted = decrypt_payload(json.loads(config_text))
+                        config_text = decrypted if isinstance(decrypted, str) else str(decrypted)
+                    except Exception as e:
+                        print(f"WARNING: Failed to decrypt kafka config: {e}", file=sys.stderr)
+                        kafka_row = None
+                if kafka_row:
+                    with open(kafka_config_path, "w") as f:
+                        f.write(config_text if isinstance(config_text, str) else str(config_text))
+                    print("  Wrote kafka-client.properties")
         else:
             print("  Using kafka-client.properties from integration env vars")
             kafka_row = True  # file exists
@@ -135,7 +154,13 @@ def main():
             props = row["properties"]
             if isinstance(props, str):
                 props = json.loads(props)
-            if fernet and isinstance(props, dict):
+            if props.get("_encrypted") and decrypt_properties:
+                try:
+                    props = decrypt_properties(props)
+                except Exception as e:
+                    print(f"  Skipped catalog {name} (decrypt failed: {e})")
+                    continue
+            elif props.get("_encrypted") and fernet and isinstance(props, dict):
                 props = _decrypt_properties(props, fernet)
             # Kafka: filter invalid props, use kafka.config.resources
             if props.get("connector.name") == "kafka":

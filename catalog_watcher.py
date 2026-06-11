@@ -30,11 +30,12 @@ except ImportError:
     BasicAuthentication = None
 
 try:
-    from cryptography.fernet import Fernet
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from catalog_crypto import decrypt_properties, get_fernet
 except ImportError:
-    Fernet = None
+    decrypt_properties = None
+
+    def get_fernet(_key: str):
+        return None
 
 # Parse TRINO_INTERNAL_URL (e.g. http://127.0.0.1:8080)
 TRINO_URL = os.environ.get("TRINO_INTERNAL_URL", "http://127.0.0.1:8080")
@@ -91,26 +92,12 @@ class _LoopbackTrinoHttpSession(requests.Session):
         return super().request(method, url, *args, **kwargs)
 
 
-def _get_fernet(encryption_key: str):
-    if not Fernet:
-        return None
-    key = encryption_key.encode() if isinstance(encryption_key, str) else encryption_key
-    try:
-        return Fernet(key)
-    except Exception:
-        pass
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=b"trino-catalog-store",
-        iterations=480000,
-    )
-    derived = base64.urlsafe_b64encode(kdf.derive(key))
-    return Fernet(derived)
-
-
 def _decrypt_properties(props, fernet):
+    if decrypt_properties and isinstance(props, dict) and props.get("_encrypted"):
+        return decrypt_properties(props)
     if not isinstance(props, dict) or not props.get("_encrypted") or "data" not in props:
+        return props
+    if fernet is None:
         return props
     try:
         decrypted = fernet.decrypt(props["data"].encode()).decode()
@@ -193,7 +180,7 @@ def main():
         sys.exit(1)
 
     encryption_key = os.environ.get("TRINO_CATALOG_ENCRYPTION_KEY")
-    fernet = _get_fernet(encryption_key) if encryption_key else None
+    fernet = get_fernet(encryption_key) if encryption_key else None
 
     kafka_config_path = "/etc/trino/kafka-client.properties"
     kafka_config_exists = os.path.exists(kafka_config_path)

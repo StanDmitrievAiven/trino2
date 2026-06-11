@@ -1,40 +1,26 @@
 #!/usr/bin/env python3
-"""Seed default Trino catalog definitions into trino_catalogs if missing."""
+"""
+Legacy seed script — summit catalogs are stored encrypted via store_encrypted_catalogs.py.
+
+This script only ensures the schema exists. It no longer inserts ${ENV:...} placeholders.
+"""
 import json
 
 from pg_connect import connect_pg
 
-CATALOGS = [
-    (
-        "summit_pg",
-        {
-            "connector.name": "postgresql",
-            "connection-url": "jdbc:postgresql://pg-37c7de3b-data-innovation-summit.c.aivencloud.com:14208/defaultdb?sslmode=require",
-            "connection-user": "avnadmin",
-            "connection-password": "${ENV:SUMMIT_PG_PASSWORD}",
-        },
-    ),
-    (
-        "summit_clickhouse",
-        {
-            "connector.name": "clickhouse",
-            "connection-url": "jdbc:clickhouse://clickhouse-2a6274d2-data-innovation-summit.c.aivencloud.com:14209/default?ssl=true",
-            "connection-user": "${ENV:CLICKHOUSE_USER}",
-            "connection-password": "${ENV:CLICKHOUSE_PASSWORD}",
-        },
-    ),
-    (
-        "summit_kafka",
-        {
-            "connector.name": "kafka",
-            "kafka.nodes": "kafka-1b5cb1e7-data-innovation-summit.c.aivencloud.com:14210",
-            "kafka.table-names": "webshop.public.customers,webshop.public.products,webshop.public.orders,webshop.public.order_items",
-            "kafka.hide-internal-columns": "false",
-            "kafka.confluent-schema-registry-url": "https://kafka-1b5cb1e7-data-innovation-summit.c.aivencloud.com:14213",
-            "kafka.config.resources": "/etc/trino/kafka-client.properties",
-        },
-    ),
-]
+INIT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS trino_catalogs (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) UNIQUE NOT NULL,
+  properties JSONB NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS trino_kafka_config (
+  id SERIAL PRIMARY KEY,
+  config_text TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+"""
 
 
 def main() -> None:
@@ -42,16 +28,8 @@ def main() -> None:
     conn.autocommit = True
     try:
         with conn.cursor() as cur:
-            for name, props in CATALOGS:
-                cur.execute(
-                    """
-                    INSERT INTO trino_catalogs (name, properties)
-                    VALUES (%s, %s::jsonb)
-                    ON CONFLICT (name) DO UPDATE SET properties = EXCLUDED.properties
-                    """,
-                    (name, json.dumps(props)),
-                )
-                print(f"  Seeded catalog: {name}")
+            cur.execute(INIT_SCHEMA)
+        print("  Catalog schema ready (use store_encrypted_catalogs.py for summit creds)")
     finally:
         conn.close()
 
