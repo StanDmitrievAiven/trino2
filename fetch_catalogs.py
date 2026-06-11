@@ -92,15 +92,20 @@ def main():
         encryption_key = os.environ.get("TRINO_CATALOG_ENCRYPTION_KEY")
         fernet = _get_fernet(encryption_key) if encryption_key else None
 
-        # Write Kafka client config if present (for SASL_SSL etc.)
+        # Write Kafka client config if present (from DB or Aiven integration env vars)
         kafka_config_path = "/etc/trino/kafka-client.properties"
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT config_text FROM trino_kafka_config LIMIT 1")
-            kafka_row = cur.fetchone()
-        if kafka_row:
-            with open(kafka_config_path, "w") as f:
-                f.write(kafka_row["config_text"])
-            print("  Wrote kafka-client.properties")
+        kafka_row = None
+        if not os.path.exists(kafka_config_path):
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT config_text FROM trino_kafka_config LIMIT 1")
+                kafka_row = cur.fetchone()
+            if kafka_row:
+                with open(kafka_config_path, "w") as f:
+                    f.write(kafka_row["config_text"])
+                print("  Wrote kafka-client.properties")
+        else:
+            print("  Using kafka-client.properties from integration env vars")
+            kafka_row = True  # file exists
 
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT name, properties FROM trino_catalogs")

@@ -20,6 +20,14 @@ echo "Configuring password authentication for user: $TRINO_ADMIN_USER"
 python3 /opt/trino-init/init_password_auth.py
 echo "---"
 
+# --- Prepare connector credentials from Aiven service integrations ---
+python3 /opt/trino-init/prepare_connector_env.py
+if [ -f /tmp/trino-connector-env ]; then
+    # shellcheck disable=SC1091
+    . /tmp/trino-connector-env
+fi
+echo "---"
+
 # --- Initialize schema and fetch catalogs from PG ---
 echo "Fetching catalogs from database..."
 python3 /opt/trino-init/fetch_catalogs.py
